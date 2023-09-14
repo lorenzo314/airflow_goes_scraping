@@ -11,9 +11,12 @@ import os
 import os.path
 from tqdm.auto import tqdm
 from datetime import datetime
+import datetime as dtm
 from urllib import request
 import re
 import requests
+import pytz
+from pytz import timezone
 
 from airflow.decorators import task
 
@@ -33,30 +36,37 @@ def initialize_date_and_directory_path():
     """
 
     # default: download the daily file
-    start_date = datetime.now()
+    start_date = dtm.datetime.now() - dtm.timedelta(days=3)
+    end_date = start_date
 
-    end_date = None
+    sat_number = '16'
+    measuring_device = 'mpsh'
 
     raw_directory_path = \
-        "/home/lorenzo/spaceable/airflow_ace_scraping/raw_data"
+        "/home/lorenzo/spaceable/airflow_goes_scraping/data_scraping/GOES-16/mpsh"
 
     silver_directory_path = \
-        "/home/lorenzo/spaceable/airflow_ace_scraping/silver_data"
+        "/home/lorenzo/spaceable/airflow_goes_scraping/data/data_aggregating/GOES-16/mpsh"
 
-    source = "https://services.swpc.noaa.gov/text/"
+    # source = "https://services.swpc.noaa.gov/text/"
     # address Arnaud
 
-    monthly = None
+    # monthly = None
 
     # A DECORATED FUNCTION SHOULD RETURN A DICTIONARY,
     # OTHERWISE IT GIVES ERRORS
+
+    # start_date, end_date, scraping_path, agg_path, resampling_path, sat_number, measuring_device
+
     return {
         "start_date": start_date,
         "end_date": end_date,
-        "source": source,
+        # "source": source,
         "raw_directory_path": raw_directory_path,
         "silver_directory_path": silver_directory_path,
-        "monthly": monthly,
+        # "monthly": monthly,
+        "sat_number": sat_number,
+        "measuring_device": measuring_device
     }
 
 
@@ -226,70 +236,210 @@ def define_url_format(passed_arguments_dict: dict):
 
 @task()
 def download_data(passed_arguments_dict: dict):
+    scraping_path = passed_arguments_dict["raw_directory_path"]
+    sat_number = passed_arguments_dict["sat_number"]
+    start_date = passed_arguments_dict["start_date"]
+    end_date = passed_arguments_dict["end_date"]
+    measuring_device = passed_arguments_dict["measuring_device"]
+
     """
-    Download data files from all the urls into the saving directories.
-    Track download progress
+    Download GOES data from :
+    https://satdat.ngdc.noaa.gov/sem/goes/data/avg/ for GOES-05 to GOES-12 (measuring device : eps) and GOES-13 to GOES-15 (measuring device : epead)
+    https://data.ngdc.noaa.gov/platforms/solar-space-observing-satellites/goes/ for GOES-16 and GOES-17 (measuring devices : mpsh and spgs)
+    https://ftp.swpc.noaa.gov/pub/warehouse/ for SWPC-NOAA GOES processed data
 
     Parameters
     ----------
-    passed_arguments_dict: dict
-    A dictionary containing
-        1 list_url : list
-            arg of all the complete urls for each date and each measuring devices.
-        2 directory_path : str
-            Path pointing to the directories where files are saved.
-        3 start_date : datetime.datetime
-            Left bound for generating scraping time interval.
-            Used to build the file_name in automatic mode.
-        4 monthly : bool, optional
-            DESCRIPTION. The default is False.
-            NOT USED IN AUTOMATIC MODE
+    scraping_path : str
+        Path where the data will be downloaded
+    sat_number : int
+        Number of the GOES spacecraft to scrape. Scrape SWPC-NOAA GOES processed data if None.
+    start_date : datetime
+        Starting date
+    end_date : datetime
+        Ending date
+    measuring_device : str
+        Measuring device of GOES spacecraft
 
     Returns
     -------
-    Write .txt files and save them in the selected directories.
+    None.
+
     """
+    sat_name = 'GOES-' + str(sat_number).zfill(2)
+    if sat_name in ['GOES-01', 'GOES-02', 'GOES-03', 'GOES-04', 'GOES-05', 'GOES-06', 'GOES-07', 'GOES-08', 'GOES-09', 'GOES-10', 'GOES-11',
+                    'GOES-12', 'GOES-13', 'GOES-14', 'GOES-15']:
+        print('Scraping ' + sat_name + ' data (' + measuring_device + ') from ' + str(start_date.year) + '-' + str(start_date.month).zfill(2) +
+              '-' + str(start_date.day).zfill(2) + ' to ' + str(end_date.year) + '-' + str(end_date.month).zfill(2) + '-' +
+              str(end_date.day).zfill(2) + '...')
+        for date in tqdm(pd.date_range(start_date, end_date, freq='M')):
+            strmonth = str(date.month).zfill(2)
+            stryear = str(date.year)
+            strday = str(calendar.monthrange(date.year, date.month)[1])
+            token = 'https://satdat.ngdc.noaa.gov/sem/goes/data/avg'
+            short_sat_name = 'g' + sat_name[-2:]
 
-    start_date = passed_arguments_dict["start_date"]
-    directory_path = passed_arguments_dict["raw_directory_path"]
-    list_url = passed_arguments_dict["list_url"]
+            file_name = short_sat_name + '_' + measuring_device + '_5m_' + stryear + strmonth + '01_' + stryear + strmonth + strday + '.csv'
+            token = token + '/' + stryear + '/' + strmonth + '/goes' + str(sat_name[-2:]) + '/csv'
 
-    output_files = []
-
-    if list_url:
-        for url in tqdm(list_url):
+            url = token + '/' + file_name
             check_url = is_url(url)
-            if not check_url:
-                print(url + " doesn't exist")
+            if check_url:
+                request.urlretrieve(url, scraping_path / file_name)
             else:
-                if "daily" in directory_path or "monthly" in directory_path:
-                    # manual case
-                    # NOT IMPLEMENTED FOR NOW
-                    file_name = url.split('/')[-1]
-                    # device = file_name.split("_")[2]
-                else:
-                    # automatic case
-                    date_format = "%Y%m%dT%H%M%S"
-                    formatted_date = start_date.strftime(date_format)
-                    device = re.split(r'[\-.]+', url)[-2]
-                    file_name = formatted_date + "_donnees_" + device + ".txt"
+                print(url + " doesn't exist")
+        print('Scraping finished for ' + sat_name + ' ' + measuring_device)
 
-                # Name of output file
-                outname = os.path.join(directory_path, file_name)
+    elif sat_name in ['GOES-16', 'GOES-17']:
+        print('Scraping ' + sat_name + ' data (' + measuring_device + ') from ' + str(start_date.year) + '-' + str(start_date.month).zfill(2) +
+              '-' + str(start_date.day).zfill(2) + ' to ' + str(end_date.year) + '-' + str(end_date.month).zfill(2) + '-' +
+              str(end_date.day).zfill(2) + '...')
+        for date in tqdm(pd.date_range(start_date, end_date, freq='D')):
+            strday = str(date.day).zfill(2)
+            strmonth = str(date.month).zfill(2)
+            stryear = str(date.year)
+            source = 'https://data.ngdc.noaa.gov/platforms/solar-space-observing-satellites/goes/'
+            short_sat_name = 'g' + sat_name[-2:]
 
-                # Creates an empty file with that name
-                # exist_ok=True by default, but specify it anyway
-                # It means that if it already exists it does not give an error
-                pathlib.Path(outname, exist_ok=True).touch()
+            version = get_version(date, measuring_device)
+            file_name = 'sci_' + measuring_device + '-l2-avg5m_' + short_sat_name + '_d' + stryear + strmonth + strday + '_' + version + '.nc'
+            source = source + 'goes' + str(sat_name[-2:]) + '/l2/data/' + measuring_device + '-l2-avg5m/' + stryear + '/' + strmonth
 
-                # grab the file
-                request.urlretrieve(url, outname)
-
-                output_files.append(outname)
-
-    passed_arguments_dict["output_files"] = output_files
+            url = source + '/' + file_name
+            check_url = is_url(url)
+            if check_url:
+                request.urlretrieve(url, scraping_path / file_name)
+            else:
+                print(url + " doesn't exist")
+        print('Scraping finished for ' + sat_name + ' ' + measuring_device)
+    else:
+        print('Scraping SWPC-NOAA GOES processed data from ' + str(start_date.year) + '-' + str(start_date.month).zfill(2) +
+              '-' + str(start_date.day).zfill(2) + ' to ' + str(end_date.year) + '-' + str(end_date.month).zfill(2) + '-' +
+              str(end_date.day).zfill(2) + '...')
+        list_years = range(start_date.year, end_date.year+1, 1)
+        token = 'ftp.swpc.noaa.gov'
+        ftp = FTP(token)
+        ftp.login()
+        ftp.cwd('pub/warehouse/')
+        for year in tqdm(list_years):
+            ftp.cwd(str(year))
+            file_name = str(year) + '_DPD.txt'
+            with open(str(scraping_path) + '/' + file_name, 'wb') as file:
+                ftp.retrbinary(f"RETR {file_name}", file.write)
+            ftp.cwd('..')
+        print('Scraping finished for SWPC-NOAA GOES data.')
 
     return passed_arguments_dict
+
+
+def get_version(date, measuring_device):
+    """
+    Get the version of the data of GOES according to the date and the measuring device (GOES-16 and GOES-17 only)
+
+    Parameters
+    ----------
+    date : dtm.datetime
+        date of the data
+    measuring_device : str
+        measuring device of GOES spacecraft
+    Returns
+    -------
+    None.
+    """
+
+    # Added by me
+    # Without it, it gives
+    # T_ype Errorr can't compare offset-naive and offset-aware datetimes
+    # See https://www.pythonclear.com/errors/typeerror-cant-compare-offset-naive-and-offset-aware-datetimes/?utm_content=cmp-true
+    eastern = timezone('US/Eastern')
+
+    if measuring_device == 'mpsh':
+        if date < eastern.localize(dtm.datetime(year=2019, month=3, day=21)):
+            return 'v1-0-0'
+        elif eastern.localize(dtm.datetime(year=2019, month=3, day=21))\
+                <= date < eastern.localize(dtm.datetime(year=2019, month=5, day=3)):
+            return 'v1-0-1'
+        elif eastern.localize(dtm.datetime(year=2019, month=5, day=3))\
+                <= date < eastern.localize(dtm.datetime(year=2020, month=12, day=1)):
+            return 'v1-0-2'
+        elif eastern.localize(dtm.datetime(year=2020, month=12, day=1))\
+                <= date < eastern.localize(dtm.datetime(year=2022, month=4, day=27)):
+            return 'v1-0-3'
+        else:
+            return 'v2-0-0'
+    elif measuring_device == 'sgps':
+        if date < dtm.datetime(year=2021, month=8, day=11):
+            return 'v1-0-1'
+        else:
+            return 'v2-0-0'
+
+
+# @task()
+# def download_data_ace(passed_arguments_dict: dict):
+#     """
+#     Download data files from all the urls into the saving directories.
+#     Track download progress
+#
+#     Parameters
+#     ----------
+#     passed_arguments_dict: dict
+#     A dictionary containing
+#         1 list_url : list
+#             arg of all the complete urls for each date and each measuring devices.
+#         2 directory_path : str
+#             Path pointing to the directories where files are saved.
+#         3 start_date : datetime.datetime
+#             Left bound for generating scraping time interval.
+#             Used to build the file_name in automatic mode.
+#         4 monthly : bool, optional
+#             DESCRIPTION. The default is False.
+#             NOT USED IN AUTOMATIC MODE
+#
+#     Returns
+#     -------
+#     Write .txt files and save them in the selected directories.
+#     """
+#
+#     start_date = passed_arguments_dict["start_date"]
+#     directory_path = passed_arguments_dict["raw_directory_path"]
+#     list_url = passed_arguments_dict["list_url"]
+#
+#     output_files = []
+#
+#     if list_url:
+#         for url in tqdm(list_url):
+#             check_url = is_url(url)
+#             if not check_url:
+#                 print(url + " doesn't exist")
+#             else:
+#                 if "daily" in directory_path or "monthly" in directory_path:
+#                     # manual case
+#                     # NOT IMPLEMENTED FOR NOW
+#                     file_name = url.split('/')[-1]
+#                     # device = file_name.split("_")[2]
+#                 else:
+#                     # automatic case
+#                     date_format = "%Y%m%dT%H%M%S"
+#                     formatted_date = start_date.strftime(date_format)
+#                     device = re.split(r'[\-.]+', url)[-2]
+#                     file_name = formatted_date + "_donnees_" + device + ".txt"
+#
+#                 # Name of output file
+#                 outname = os.path.join(directory_path, file_name)
+#
+#                 # Creates an empty file with that name
+#                 # exist_ok=True by default, but specify it anyway
+#                 # It means that if it already exists it does not give an error
+#                 pathlib.Path(outname, exist_ok=True).touch()
+#
+#                 # grab the file
+#                 request.urlretrieve(url, outname)
+#
+#                 output_files.append(outname)
+#
+#     passed_arguments_dict["output_files"] = output_files
+#
+#     return passed_arguments_dict
 
 
 def is_url(url):
