@@ -1,9 +1,3 @@
-# ONLY AUTOMATIC DOWNLOAD IMPLEMENTED FOR NOW
-# NO ARGUMENTS PASSED TO THE MAIN FUNCTION
-# TODO: Implement manual download
-# TODO: Settle the args issue in DAGS
-# TODO: Clarify if it is possible to use DAG params with TaskFlow
-
 import pathlib
 import pandas as pd
 import json
@@ -27,44 +21,20 @@ from google.cloud import storage
 
 @task()
 def initialize_date_and_directory_path():
-    """
-    Developed to test the DAG in local environment
-    TODO: it will be necessary to settle the args issue in DAGS
-
-    The code is from the check_passes_arguments function for the
-    automatic download case
-    """
-
-    # default: download the daily file
     start_date = dtm.datetime.now() - dtm.timedelta(days=3)
     end_date = start_date
-
     sat_number = '16'
     measuring_device = 'mpsh'
-
     raw_directory_path = \
         "/home/lorenzo/spaceable/airflow_goes_scraping/data_scraping/GOES-16/mpsh"
-
     silver_directory_path = \
         "/home/lorenzo/spaceable/airflow_goes_scraping/data/data_aggregating/GOES-16/mpsh"
-
-    # source = "https://services.swpc.noaa.gov/text/"
-    # address Arnaud
-
-    # monthly = None
-
-    # A DECORATED FUNCTION SHOULD RETURN A DICTIONARY,
-    # OTHERWISE IT GIVES ERRORS
-
-    # start_date, end_date, scraping_path, agg_path, resampling_path, sat_number, measuring_device
 
     return {
         "start_date": start_date,
         "end_date": end_date,
-        # "source": source,
         "raw_directory_path": raw_directory_path,
         "silver_directory_path": silver_directory_path,
-        # "monthly": monthly,
         "sat_number": sat_number,
         "measuring_device": measuring_device
     }
@@ -149,92 +119,6 @@ def get_bucket_name(passed_arguments_dict: dict):
 
 
 @task()
-def define_url_format(passed_arguments_dict: dict):
-    """
-    Build complete urls for each date and each measuring device,
-    with format depending on the data source.
-
-    Parameters
-    ----------
-    passed_arguments_dict : dict
-        Contains:
-        1: Website address for data scraping.
-        2: dates_in_time_interval : DatetimeIndex
-        Range of equally spaced time points between start_date and end_date
-        3: measuring_devices : list
-        A list of measuring devices: mag', 'swepam', 'epam', 'sis'.
-        4: directory_path : str
-        The directory path
-
-    Raises
-    ------
-    ValueError
-        Warning about potential mix-up between sources and file_name format.
-
-    Returns
-    -------
-    list_url : list
-        A list of all the complete urls for each date and each measuring devices.
-    """
-
-    source = passed_arguments_dict["source"]
-    dates_in_time_interval = passed_arguments_dict["dates_in_time_interval"]
-    measuring_devices = passed_arguments_dict["measuring_devices"]
-    directory_path = passed_arguments_dict["raw_directory_path"]
-
-    list_url = []
-    for device in measuring_devices:
-        # Next 4 lines because on one url, the device is called "magnetometer",
-        # and on the other "mag"
-        if device in "mag":
-            nasa_device = "magnetometer"
-        else:
-            nasa_device = device
-
-        for date in dates_in_time_interval:
-            # for automatic download
-            # ONLY AUTOMATIC DOWNLOAD IMPLEMENTED FOR NOW
-            if source == 'https://services.swpc.noaa.gov/text/':
-                # date_format = "%Y-%m-%d_%H-%M-%S"
-                # formatted_date = date.strftime(date_format)
-                remote_file_name = "ace-" + nasa_device + ".txt"
-                url = source + remote_file_name
-                list_url.append(url)
-            # for manual download of monthly files
-            elif source == "https://sohoftp.nascom.nasa.gov/sdb/goes/ace/monthly/":
-                date_format = "%Y%m"
-                interval = "1h"
-                formatted_date = date.strftime(date_format)
-                file_name = \
-                    formatted_date + "_ace_" + device + "_" + interval + ".txt"
-
-                # create list of url for files not in the directory
-                if not os.path.isfile(directory_path + device + '/' + file_name):
-                    url = source + file_name
-                    list_url.append(url)
-            # for manual download of daily files
-            elif source == "https://sohoftp.nascom.nasa.gov/sdb/goes/ace/daily/":
-                date_format = "%Y%m%d"
-                interval = get_interval(device)
-                formatted_date = date.strftime(date_format)
-                file_name = \
-                    formatted_date + "_ace_" + device + "_" + interval + ".txt"
-
-                # create list of url for files not in the directory
-                if not os.path.isfile(
-                        directory_path + device + '/' + file_name):
-                    url = source + file_name
-                    list_url.append(url)
-            else:
-                raise ValueError("Your local source does match any default sources,"
-                                 " please check sources ")
-
-    passed_arguments_dict["list_url"] = list_url
-
-    return passed_arguments_dict
-
-
-@task()
 def download_data(passed_arguments_dict: dict):
     scraping_path = passed_arguments_dict["raw_directory_path"]
     sat_number = passed_arguments_dict["sat_number"]
@@ -244,10 +128,12 @@ def download_data(passed_arguments_dict: dict):
 
     """
     Download GOES data from :
-    https://satdat.ngdc.noaa.gov/sem/goes/data/avg/ for GOES-05 to GOES-12 (measuring device : eps) and GOES-13 to GOES-15 (measuring device : epead)
-    https://data.ngdc.noaa.gov/platforms/solar-space-observing-satellites/goes/ for GOES-16 and GOES-17 (measuring devices : mpsh and spgs)
+    https://satdat.ngdc.noaa.gov/sem/goes/data/avg/
+    for GOES-05 to GOES-12 (measuring device : eps) and GOES-13 to GOES-15 (measuring device : epead)
+    https://data.ngdc.noaa.gov/platforms/solar-space-observing-satellites/goes/
+    for GOES-16 and GOES-17 (measuring devices : mpsh and spgs)
     https://ftp.swpc.noaa.gov/pub/warehouse/ for SWPC-NOAA GOES processed data
-
+    
     Parameters
     ----------
     scraping_path : str
@@ -264,7 +150,6 @@ def download_data(passed_arguments_dict: dict):
     Returns
     -------
     None.
-
     """
     sat_name = 'GOES-' + str(sat_number).zfill(2)
     if sat_name in ['GOES-01', 'GOES-02', 'GOES-03', 'GOES-04', 'GOES-05', 'GOES-06', 'GOES-07', 'GOES-08', 'GOES-09', 'GOES-10', 'GOES-11',
@@ -374,74 +259,6 @@ def get_version(date, measuring_device):
             return 'v2-0-0'
 
 
-# @task()
-# def download_data_ace(passed_arguments_dict: dict):
-#     """
-#     Download data files from all the urls into the saving directories.
-#     Track download progress
-#
-#     Parameters
-#     ----------
-#     passed_arguments_dict: dict
-#     A dictionary containing
-#         1 list_url : list
-#             arg of all the complete urls for each date and each measuring devices.
-#         2 directory_path : str
-#             Path pointing to the directories where files are saved.
-#         3 start_date : datetime.datetime
-#             Left bound for generating scraping time interval.
-#             Used to build the file_name in automatic mode.
-#         4 monthly : bool, optional
-#             DESCRIPTION. The default is False.
-#             NOT USED IN AUTOMATIC MODE
-#
-#     Returns
-#     -------
-#     Write .txt files and save them in the selected directories.
-#     """
-#
-#     start_date = passed_arguments_dict["start_date"]
-#     directory_path = passed_arguments_dict["raw_directory_path"]
-#     list_url = passed_arguments_dict["list_url"]
-#
-#     output_files = []
-#
-#     if list_url:
-#         for url in tqdm(list_url):
-#             check_url = is_url(url)
-#             if not check_url:
-#                 print(url + " doesn't exist")
-#             else:
-#                 if "daily" in directory_path or "monthly" in directory_path:
-#                     # manual case
-#                     # NOT IMPLEMENTED FOR NOW
-#                     file_name = url.split('/')[-1]
-#                     # device = file_name.split("_")[2]
-#                 else:
-#                     # automatic case
-#                     date_format = "%Y%m%dT%H%M%S"
-#                     formatted_date = start_date.strftime(date_format)
-#                     device = re.split(r'[\-.]+', url)[-2]
-#                     file_name = formatted_date + "_donnees_" + device + ".txt"
-#
-#                 # Name of output file
-#                 outname = os.path.join(directory_path, file_name)
-#
-#                 # Creates an empty file with that name
-#                 # exist_ok=True by default, but specify it anyway
-#                 # It means that if it already exists it does not give an error
-#                 pathlib.Path(outname, exist_ok=True).touch()
-#
-#                 # grab the file
-#                 request.urlretrieve(url, outname)
-#
-#                 output_files.append(outname)
-#
-#     passed_arguments_dict["output_files"] = output_files
-#
-#     return passed_arguments_dict
-
-
 def is_url(url):
     """
     Check if the passed url exists or not
@@ -532,70 +349,24 @@ def save_passed_arguments_locally(passed_arguments_dict: dict):
     return passed_arguments_dict
 
 
-# Copied from
-# spaceable\python-storage\samples\snippets\storage_upload_file.py
 @task()
 def upload_raw(passed_arguments_dict: dict):
-    """Uploads a file to the bucket."""
-    # The ID of your GCS bucket
-    # bucket_name = "your-bucket-name"
-    # The path to your file to upload
-    # source_file_name = "local/path/to/file"
-    # The ID of your GCS object
-    # destination_blob_name = "storage-object-name"
-
-    # BUCKET NAME RANDOMLY GENERATED
-    #
-    # v3mhxhemaey1ohkyil8v
-    #
-    ##################################
-
-    # TODO: fill
     bucket_name = passed_arguments_dict["bucket_name"]
-
-    # There are several files to upload, one for each instrument
     output_files = passed_arguments_dict["output_files"]
-
-    print('_______________________________')
-    for i in output_files:
-        print(i)
-    print('_______________________________')
-
-    # TODO; fill
-    # destination_blob_name = .....
-
     storage_client = storage.Client()
     bucket = storage_client.bucket(bucket_name)
 
     for i in output_files:
         destination_blob_name = i
         blob = bucket.blob(destination_blob_name)
-
         generation_match_precondition = 0
-
         source_file_name = i
-
         blob.upload_from_filename(
             source_file_name,
             if_generation_match=generation_match_precondition
         )
-
         print(
             f"File {source_file_name} uploaded to {destination_blob_name}."
         )
 
     return passed_arguments_dict
-
-    # Optional: set a generation-match precondition to avoid potential race conditions
-    # and data corruptions. The request to upload is aborted if the object's
-    # generation number does not match your precondition. For a destination
-    # object that does not yet exist, set the if_generation_match precondition to 0.
-    # If the destination object already exists in your bucket, set instead a
-    # generation-match precondition using its generation number.
-    # generation_match_precondition = 0
-
-    # blob.upload_from_filename(source_file_name, if_generation_match=generation_match_precondition)
-    #
-    # print(
-    #     f"File {source_file_name} uploaded to {destination_blob_name}."
-    # )
