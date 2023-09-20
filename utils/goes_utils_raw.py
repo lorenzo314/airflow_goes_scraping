@@ -151,6 +151,8 @@ def download_data(passed_arguments_dict: dict):
     -------
     None.
     """
+    ret_file = ""
+
     sat_name = 'GOES-' + str(sat_number).zfill(2)
     if sat_name in ['GOES-01', 'GOES-02', 'GOES-03', 'GOES-04', 'GOES-05', 'GOES-06', 'GOES-07', 'GOES-08', 'GOES-09', 'GOES-10', 'GOES-11',
                     'GOES-12', 'GOES-13', 'GOES-14', 'GOES-15']:
@@ -193,7 +195,10 @@ def download_data(passed_arguments_dict: dict):
             url = source + '/' + file_name
             check_url = is_url(url)
             if check_url:
-                request.urlretrieve(url, scraping_path / file_name)
+                # ORIGINAL CODE DOES NOT WORK
+                # request.urlretrieve(url, scraping_path / file_name)
+                ret_file = os.path.join(scraping_path, file_name)
+                request.urlretrieve(url, ret_file)
             else:
                 print(url + " doesn't exist")
         print('Scraping finished for ' + sat_name + ' ' + measuring_device)
@@ -214,6 +219,7 @@ def download_data(passed_arguments_dict: dict):
             ftp.cwd('..')
         print('Scraping finished for SWPC-NOAA GOES data.')
 
+    passed_arguments_dict["output_files"] = [ret_file]
     return passed_arguments_dict
 
 
@@ -234,7 +240,7 @@ def get_version(date, measuring_device):
 
     # Added by me
     # Without it, it gives
-    # T_ype Errorr can't compare offset-naive and offset-aware datetimes
+    # T_ype Error can't compare offset-naive and offset-aware datetimes
     # See https://www.pythonclear.com/errors/typeerror-cant-compare-offset-naive-and-offset-aware-datetimes/?utm_content=cmp-true
     eastern = timezone('US/Eastern')
 
@@ -251,7 +257,10 @@ def get_version(date, measuring_device):
                 <= date < eastern.localize(dtm.datetime(year=2022, month=4, day=27)):
             return 'v1-0-3'
         else:
-            return 'v2-0-0'
+            # THE ORIGINAL CODE HAS THIS
+            # return 'v2-0-0'
+            # BUT THERE IS NO SUCH VERSION? ONE SHOULD USE 0-1
+            return 'v2-0-1'
     elif measuring_device == 'sgps':
         if date < dtm.datetime(year=2021, month=8, day=11):
             return 'v1-0-1'
@@ -303,40 +312,10 @@ def save_passed_arguments_locally(passed_arguments_dict: dict):
         else:
             file.write(f'end_date {str(None)}\n')
 
-        if passed_arguments_dict["source"] is not None:
-            file.write(f'source {passed_arguments_dict["source"]}\n')
-        else:
-            file.write(f'source {str(None)}\n')
-
         if passed_arguments_dict["raw_directory_path"] is not None:
             file.write(f'directory_path {passed_arguments_dict["raw_directory_path"]}\n')
         else:
             file.write(f'directory_path {str(None)}\n')
-
-        if passed_arguments_dict["dates_in_time_interval"] is not None:
-            dates_in_time_interval = passed_arguments_dict["dates_in_time_interval"]
-            assert type(dates_in_time_interval) == list
-            for i in dates_in_time_interval:
-                assert type(i) == str
-                file.write(f'dates_in_time_interval {i}\n')
-        else:
-            file.write(f'dates_in_time_interval {str(None)}\n')
-
-        if passed_arguments_dict["measuring_devices"] is not None:
-            measuring_devices = passed_arguments_dict["measuring_devices"]
-            assert type(measuring_devices) == list
-            for i in measuring_devices:
-                file.write(f'measuring device {i}\n')
-        else:
-            file.write(f'measuring devices {str(None)}\n')
-
-        if passed_arguments_dict["list_url"] is not None:
-            list_url = passed_arguments_dict["list_url"]
-            assert type(list_url) == list
-            for i in list_url:
-                file.write(f'url {i}\n')
-        else:
-            file.write(f'list url {str(None)}\n')
 
         if passed_arguments_dict["output_files"] is not None:
             output_files = passed_arguments_dict["output_files"]
@@ -361,10 +340,12 @@ def upload_raw(passed_arguments_dict: dict):
         blob = bucket.blob(destination_blob_name)
         generation_match_precondition = 0
         source_file_name = i
-        blob.upload_from_filename(
-            source_file_name,
-            if_generation_match=generation_match_precondition
-        )
+
+        blob.upload_from_filename(source_file_name)
+        # blob.upload_from_filename(
+        #     source_file_name,
+        #     if_generation_match=generation_match_precondition
+        # )
         print(
             f"File {source_file_name} uploaded to {destination_blob_name}."
         )

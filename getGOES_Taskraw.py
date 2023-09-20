@@ -20,12 +20,10 @@ def getGOES_taskraw():
 
     # Get the date range to query
     # In automatic mode it is just the current date
-    # passed_arguments_dict = \
-    #   gur.get_dates_in_time_interval(passed_arguments_dict)
+    # passed_arguments_dict = gur.get_dates_in_time_interval(passed_arguments_dict)
 
     # Get the measuring devices
-    # passed_arguments_dict = \
-    #    gur.get_measuring_devices(passed_arguments_dict)
+    # passed_arguments_dict = gur.get_measuring_devices(passed_arguments_dict)
 
     # Get the list of URLs
     # passed_arguments_dict = gur.define_url_format(passed_arguments_dict)
@@ -37,10 +35,10 @@ def getGOES_taskraw():
     passed_arguments_dict = gur.get_bucket_name(passed_arguments_dict)
 
     # Upload on cloud
-    # passed_arguments_dict = gur.upload_raw(passed_arguments_dict)
+    passed_arguments_dict = gur.upload_raw(passed_arguments_dict)
 
     # Save parameters on local file
-    # passed_arguments_dict = gur.save_passed_arguments_locally(passed_arguments_dict)
+    passed_arguments_dict = gur.save_passed_arguments_locally(passed_arguments_dict)
 
 
 getGOES_taskraw()
